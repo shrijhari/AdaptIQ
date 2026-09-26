@@ -1,0 +1,31 @@
+question_id,question,option_a,option_b,option_c,option_d,correct_answer,difficulty,skills
+Q1,Which Python library is primarily used for numerical array operations?,NumPy,Flask,Requests,Django,B,Easy,S1
+Q2,What does df.dropna() typically do in Pandas?,Fills missing values,Removes rows/columns containing missing values,Sorts data,Removes duplicates,B,Easy,S1
+Q3,Which NumPy operation performs element-wise multiplication between two arrays?,np.dot() only,*,np.concat(),np.merge(),B,Medium,S1
+Q4,"What is the shape of np.zeros((3, 4))?","(4,3)","(3,4)","(12,)","(3,)",B,Easy,S1
+Q5,A dataset contains 1 million numerical values. Which approach is generally more efficient for applying the same mathematical operation to the entire column?,Python loop over every value,NumPy/Pandas vectorized operation,Recursive function,Creating one thread per value,B,Hard,S1
+Q6,"In supervised learning, the training data normally contains:",Only features,Features and target labels,Only labels,No data,B,Easy,S2
+Q7,What is the primary purpose of a loss function?,Increase dataset size,Measure how far predictions are from desired outputs,Remove features,Deploy the model,B,Easy,S2
+Q8,A model performs very well on training data but poorly on unseen data. What is this most likely?,Underfitting,Overfitting,Normalization,Regularization,B,Medium,S2
+Q9,Which technique is commonly used to reduce overfitting?,Increasing model complexity indefinitely,Regularization,Removing the validation set,Training on fewer examples without reason,B,Medium,S2
+Q10,Why is a separate test set used after model development?,To train the model faster,To estimate performance on unseen data,To increase the number of features,To replace the training set,B,Hard,S2
+Q11,What is the main purpose of an activation function in a neural network?,Introduce non-linearity,Store the dataset,Remove all weights,Split the dataset,A,Easy,S3
+Q12,Which algorithm is commonly used to update neural-network weights during training?,Breadth-first search,Gradient descent,Binary search,K-means,B,Easy,S3
+Q13,Backpropagation is primarily used to:,Generate new training examples,Compute gradients of the loss with respect to model parameters,Deploy the model,Normalize the input data,B,Medium,S3
+Q14,What is the purpose of an optimizer such as Adam?,Choose the dataset,Update model parameters using gradient information,Convert images to text,Remove labels,B,Medium,S3
+Q15,A neural network's training loss stops improving and gradients become extremely small in earlier layers. Which problem could this indicate?,Vanishing gradients,Data shuffling,One-hot encoding,Data augmentation,A,Hard,S3
+Q16,Why is feature scaling often useful for algorithms such as KNN?,It makes all labels identical,It prevents features with large numerical ranges from dominating distance calculations,It removes the target variable,It increases the number of samples,B,Easy,S4
+Q17,"Which technique can convert a categorical variable such as red, blue, green into numerical features?",One-hot encoding,Backpropagation,Dropout,Gradient descent,A,Easy,S4
+Q18,What is a common way to handle a numerical feature containing missing values?,Always delete the entire dataset,Imputation using a statistic such as the median,Convert every value to a string,Ignore the issue in every model,B,Medium,S4
+Q19,Why should preprocessing parameters such as a scaler generally be fitted only on the training data?,To make the model larger,To prevent information from the validation/test sets leaking into training,To remove all outliers,To increase the learning rate,B,Medium,S4
+Q20,"You have 1,000 highly correlated features. Which technique can help reduce dimensionality while retaining important variation in the data?",PCA,Dropout,Tokenization,Backpropagation,A,Hard,S4
+Q21,"For a balanced binary classification problem, which metric measures the fraction of predictions that are correct?",Accuracy,Recall,Mean squared error,BLEU,A,Easy,S5
+Q22,Precision answers which question?,"Of the actual positives, how many were found?","Of the predicted positives, how many were actually positive?",How many samples were used for training?,How long did training take?,B,Medium,S5
+Q23,What does recall measure?,Fraction of predicted positives that are correct,Fraction of actual positives that were correctly identified,Training speed,Number of model parameters,B,Medium,S5
+Q24,What is the main purpose of an API when deploying an ML model?,It allows other software to send inputs to and receive predictions from the model,It automatically creates training data,It replaces the model's weights,It guarantees 100% accuracy,A,Easy,S5
+Q25,A deployed model's prediction quality gradually decreases because the real-world input distribution has changed. What is this commonly called?,Model/data drift,Backpropagation,One-hot encoding,Batch normalization,A,Hard,S5
+Q26,What is an embedding?,A numerical vector representation of information such as text,A type of database table only,A neural-network optimizer,A programming language,A,Easy,S6
+Q27,What is the main purpose of tokenization in an LLM pipeline?,Convert text into tokens that can be processed numerically by the model,Deploy the model,Remove the model's parameters,Increase GPU memory,A,Easy,S6
+Q28,"In a Transformer, what does self-attention primarily allow the model to do?",Process relationships between different tokens in the sequence,Remove all tokens,Reduce every input to one number before processing,Replace the training dataset,A,Medium,S3;S6
+Q29,What is the main idea behind Retrieval-Augmented Generation (RAG)?,Retrieve relevant external information and provide it to the language model when generating an answer,Train a new LLM from scratch for every query,Remove the model's context,Replace embeddings with random vectors,A,Medium,S6
+Q30,A RAG system retrieves documents using embeddings and then passes the retrieved text to an LLM. Which skills are directly involved?,LLMs/GenAI only,Data preprocessing only,LLMs/GenAI + Python/Data Handling,Deep learning only,C,Hard,S1;S6
