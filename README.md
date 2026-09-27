@@ -167,8 +167,16 @@ Install the required dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
 
-## Run the Streamlit application:
+Run the Streamlit application:
 
 ```bash
 streamlit run src/app.py
+```
+
+The application opens the adaptive learning interface in a web browser.
+
+The complete learning loop is:
+
+DINA → BKT → Adaptive Question Selection → Student Response → BKT Update → Next Question
