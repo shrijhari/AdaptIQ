@@ -89,11 +89,15 @@ The system currently models six skills:
 - S5: Model Evaluation & Deployment
 - S6: LLMs & Generative AI
 
-## Question Bank
+## Question Banks
 
-The current diagnostic question bank contains 30 multiple-choice questions.
+The system uses two separate question banks for different stages of the learning process.
 
-Each question has:
+### Diagnostic Question Bank
+
+The diagnostic question bank contains 30 multiple-choice questions used during the initial learner assessment.
+
+Each diagnostic question contains:
 
 - Question text
 - Answer options
@@ -101,7 +105,27 @@ Each question has:
 - Difficulty
 - Skill mapping through the Q-matrix
 
-The Q-matrix connects each question to the skills required to answer it.
+The diagnostic questions are stored in:
+
+- `data/questions.csv`
+- `data/q_matrix.csv`
+
+The diagnostic question bank is used by the DINA model to estimate the learner's initial mastery and by BKT to process the learner's diagnostic response history.
+
+### Adaptive Question Bank
+
+A separate adaptive question bank is used after the initial diagnostic and BKT stages.
+
+The adaptive question bank contains 30 additional multiple-choice questions. These questions are kept separate from the diagnostic questions so that the adaptive learning stage does not simply repeat questions used during diagnosis.
+
+The adaptive questions are stored in:
+
+- `data/adaptive_questions.csv`
+- `data/adaptive_q_matrix.csv`
+
+The adaptive Q-matrix connects each adaptive question to the skills required to answer it.
+
+The adaptive selector uses this separate question pool to select unseen questions based on the learner's current mastery state.
 
 ## Adaptive Question Selection
 
@@ -109,22 +133,27 @@ The adaptive selector receives the learner's current mastery probabilities from 
 
 The selection process is:
 
-Current mastery
-        ↓
-Identify weakest skill
-        ↓
-Find relevant questions
-        ↓
-Score candidate questions
-        ↓
-Select next question
+1. Identify the skill with the lowest current mastery.
+2. Find unseen adaptive questions mapped to that skill.
+3. Score candidate questions based on skill relevance and learner weakness.
+4. Estimate predicted correctness from the learner's current mastery.
+5. Match question difficulty to the learner's current mastery level.
+6. Select the highest-scoring unseen adaptive question.
+7. Present the question through the Streamlit interface.
+8. Send the learner's response back to BKT.
+9. Use the updated mastery state for the next question selection.
 
-The prototype scoring considers:
+The selector prevents previously answered adaptive questions from being selected again unless repetition is explicitly enabled.
 
-- Skill relevance
-- Skill weakness
-- Predicted correctness
-- Difficulty match
+The adaptive selector is implemented in:
+
+- `src/adaptive_engine.py`
+- `src/adaptive_session.py`
+
+The end-to-end demonstration is implemented in:
+
+- `src/adaptive_demo.py`
+- `src/app.py`
 
 ## Interactive Prototype
 
