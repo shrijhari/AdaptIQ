@@ -35,15 +35,18 @@ for question_id, response in zip(question_ids, responses):
 
 
 # 3. Create Person 3's adaptive session.
-selector = AdaptiveQuestionSelector(QUESTIONS, Q_MATRIX)
+selector = AdaptiveQuestionSelector(
+    "data/adaptive_questions.csv",
+    "data/adaptive_q_matrix.csv"
+)
 
-# IMPORTANT: all 30 current questions are already in the diagnostic history.
-# allow_repeat=True is therefore used ONLY for this repository's demo.
+# Use the separate adaptive question bank so diagnostic questions
+# are not repeated during the adaptive learning stage.
 session = AdaptiveSession(
     bkt=bkt,
     selector=selector,
     asked_question_ids=set(question_ids),
-    allow_repeat=True,
+    allow_repeat=False,
 )
 
 print("Updated mastery:")
