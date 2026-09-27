@@ -32,17 +32,17 @@ def build_session():
                 bkt.update_skill(skill_ids[i], response)
 
     selector = AdaptiveQuestionSelector(
-        "data/questions.csv",
-        "data/q_matrix.csv",
-    )
+    "data/adaptive_questions.csv",
+    "data/adaptive_q_matrix.csv",
+)
 
-    # The current repository has only one 30-question bank and S001 has
-    # already answered all 30. Repeats are enabled only for demonstration.
+   # Use a separate adaptive question bank so diagnostic
+# questions are not repeated during the adaptive stage.
     return AdaptiveSession(
         bkt=bkt,
         selector=selector,
         asked_question_ids=set(question_ids),
-        allow_repeat=True,
+        allow_repeat=False,
     )
 
 
