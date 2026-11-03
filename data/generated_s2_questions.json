@@ -1,0 +1,44 @@
+[
+    {
+        "question": "Which of the following statements best describes overfitting in machine learning?\n",
+        "options": [
+            "Overfitting occurs when a model has too little flexibility and cannot fit the training data well.",
+            "Overfitting happens when a model performs well on the training data but poorly on the test data.",
+            "Overfitting is when a model has too much flexibility and fits the training data too closely, including noise.",
+            "Overfitting is when a model has a high test error rate because it is too simple."
+        ],
+        "correct_option": "C",
+        "explanation": "Overfitting occurs when a model has too much flexibility and fits the training data too closely, including noise, leading to poor performance on unseen data.",
+        "difficulty": "Medium",
+        "skill_id": "S2",
+        "source_chunk_id": "S2_C5"
+    },
+    {
+        "question": "In the context of classification, what does a low test error rate indicate about a model?\n",
+        "options": [
+            "The model has a high training error rate.",
+            "The model has a high test error rate.",
+            "The model has a low training error rate.",
+            "The model has a low test error rate."
+        ],
+        "correct_option": "D",
+        "explanation": "A low test error rate indicates that the model performs well on unseen data, which is crucial for its effectiveness.",
+        "difficulty": "Easy",
+        "skill_id": "S2",
+        "source_chunk_id": "S2_C4"
+    },
+    {
+        "question": "Which of the following is true about the bias-variance trade-off in machine learning?\n",
+        "options": [
+            "More flexible models have higher bias and lower variance.",
+            "More flexible models have lower bias and higher variance.",
+            "Less flexible models have lower bias and higher variance.",
+            "Less flexible models have higher bias and lower variance."
+        ],
+        "correct_option": "B",
+        "explanation": "More flexible models generally have lower bias but higher variance, making them prone to overfitting.",
+        "difficulty": "Medium",
+        "skill_id": "S2",
+        "source_chunk_id": "S2_C6"
+    }
+]
