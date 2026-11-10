@@ -10,6 +10,14 @@ Usage:
     pip install pymupdf4llm ollama sentence-transformers faiss-cpu numpy pandas
     python src/ingest_textbook.py knowledge_base/ISLP_website.pdf knowledge_base/dl2.pdf
 
+Section detection:
+    - Uses the PDF's built-in bookmarks (table of contents) when it has them -
+      the most reliable source of real chapter/section titles.
+    - Otherwise falls back to markdown headings, ignoring code blocks and
+      figure/table captions (so Python comments are not mistaken for headings).
+    - Very long sections are split so Qwen sees each part.
+    - Manual corrections: data/skill_overrides.json (see --overrides-template).
+
 Safeguards:
     - Qwen is tested before any slow work starts.
     - If any section cannot be classified by Qwen, the run stops BEFORE any
@@ -80,6 +88,11 @@ CHUNK_WORDS = 200         # MiniLM truncates around 256 tokens
 CHUNK_OVERLAP = 30
 FALLBACK_PAGES_PER_SECTION = 3
 CLASSIFY_ATTEMPTS = 2     # tries per section before it counts as a failure
+MAX_SECTION_WORDS = 3500  # longer sections are split into parts
+SPLIT_TARGET_WORDS = 2500
+TOC_MAX_LEVEL = 2         # bookmark levels used as sections (1=chapter, 2=section)
+MIN_TOC_ENTRIES = 10      # fewer bookmarks than this = treat PDF as having none
+OVERRIDES_PATH = DATA_DIR / "skill_overrides.json"
 # ----------------------------------------
 
 SKILL_IDS = list(SKILLS)
@@ -119,158 +132,164 @@ def extract_pages(path: Path):
     raise ValueError(f"Unsupported format: {path.suffix} (use PDF)")
 
 
-# ---------- 2. chapters / sections (keeps introductory content) ----------
-def extract_pdf_toc(path: Path):
-    """Return PDF bookmarks as (level, title, page) entries."""
-    import fitz
-
-    with fitz.open(path) as doc:
-        return doc.get_toc()
+# ---------- 2. chapters / sections ----------
+CAPTION_RE = re.compile(r"^(t?fig(ure)?\.?|table|listing|algorithm)\s*\d", re.I)
+CODE_LIKE_RE = re.compile(r"[=(){}\[\];<>]|->")
 
 
-def build_sections(pages, toc=None):
-    """Build sections from PDF bookmarks, or safe Markdown headings as fallback."""
-    sections = []
+def clean_heading(raw: str) -> str:
+    text = re.sub(r"<[^>]+>", "", raw)            # strip <mark>, <br>, ...
+    text = re.sub(r"[*_`]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
 
-    # PDF bookmarks are more reliable than guessing from extracted Markdown.
-    if toc:
-        grouped = {}
-        for entry in toc:
-            level, title, page = entry[:3]
-            title = title.strip()
-            if not title or level > MAX_HEADING_LEVEL:
+
+def is_real_heading(title: str) -> bool:
+    """Reject captions, code and Python comments that start with '#'."""
+    words = title.split()
+    if not (3 <= len(title) <= 100) or len(words) > 14:
+        return False
+    if CAPTION_RE.match(title):                    # "Fig. 1.4.1 ...", "Table 3.2"
+        return False
+    if CODE_LIKE_RE.search(title):                 # code or leftover HTML
+        return False
+    if not title[0].isalnum():
+        return False
+    if title[0].islower() and len(words) >= 3:     # "create a tensor" (comment)
+        return False
+    return True
+
+
+def build_sections(pages):
+    """Heading-based sections (used when the PDF has no bookmarks)."""
+    sections, stack = [], []
+    current = None
+    intro_lines, intro_start, intro_end = [], None, None
+
+    for page_no, text in pages:
+        in_code = False                            # fences are balanced per page
+        for line in text.splitlines():
+            m = None
+            if line.strip().startswith("```"):
+                in_code = not in_code
+            elif not in_code:
+                m = HEAD_RE.match(line)
+            title = clean_heading(m.group(2)) if m else ""
+
+            if m and is_real_heading(title):
+                level = len(m.group(1))
+                stack = stack[: level - 1] + [title]
+                current = {
+                    "title": title,
+                    "path": " > ".join(stack),
+                    "chapter": stack[0],
+                    "start": page_no,
+                    "end": page_no,
+                    "lines": [],
+                }
+                sections.append(current)
+            elif current is not None:
+                current["lines"].append(line)
+                current["end"] = page_no
+            else:
+                # text before the first heading = introduction / front matter
+                if intro_start is None:
+                    intro_start = page_no
+                intro_lines.append(line)
+                intro_end = page_no
+
+    for s in sections:
+        s["text"] = "\n".join(s.pop("lines")).strip()
+
+    intro_text = "\n".join(intro_lines).strip()
+    if len(intro_text.split()) >= 30:
+        sections.insert(0, {
+            "title": "Introduction", "path": "Introduction",
+            "chapter": "Introduction", "start": intro_start,
+            "end": intro_end, "text": intro_text,
+        })
+    return finalize_sections(sections)
+
+
+def get_toc(path: Path):
+    """PDF bookmarks as [(level, title, page), ...]; [] if none."""
+    if path.suffix.lower() != ".pdf":
+        return []
+    try:
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
+        doc = fitz.open(str(path))
+        toc = doc.get_toc()
+        doc.close()
+        return toc
+    except Exception:
+        return []
+
+
+def build_sections_from_toc(pages, toc):
+    """Sections from PDF bookmarks. A section spans from its own start page to
+    the page where the next section starts (that boundary page appears in both,
+    which acts like chunk overlap)."""
+    page_text = dict(pages)
+    last_page = pages[-1][0]
+    entries = []
+    for level, title, page in toc:
+        title = clean_heading(title)
+        if level <= TOC_MAX_LEVEL and 1 <= page <= last_page and title:
+            entries.append((level, title, page))
+
+    sections, stack = [], []
+    for i, (level, title, page) in enumerate(entries):
+        stack = stack[: level - 1] + [title]
+        end = entries[i + 1][2] if i + 1 < len(entries) else last_page
+        end = max(end, page)
+        text = "\n".join(page_text.get(n, "") for n in range(page, end + 1)).strip()
+        sections.append({
+            "title": title, "path": " > ".join(stack), "chapter": stack[0],
+            "start": page, "end": end, "text": text,
+        })
+    return finalize_sections(sections)
+
+
+def split_oversized(sections):
+    """Split very long sections so Qwen (which reads the start) sees each part."""
+    out = []
+    for s in sections:
+        words = s["text"].split()
+        if len(words) <= MAX_SECTION_WORDS:
+            out.append(s)
+            continue
+        n = -(-len(words) // SPLIT_TARGET_WORDS)
+        size = -(-len(words) // n)
+        span = s["end"] - s["start"]
+        for k in range(n):
+            part = " ".join(words[k * size:(k + 1) * size])
+            if not part:
                 continue
-            # Captions are not structural headings, even if present in the TOC.
-            if re.match(r"^(?:<mark>)?t?Fig\.?\s*\d", title, re.IGNORECASE):
-                continue
-            if 1 <= page <= len(pages):
-                grouped.setdefault(page, []).append((level, title))
+            ns = dict(s)
+            ns["text"] = part
+            ns["title"] = f"{s['title']} (part {k + 1}/{n})"
+            ns["path"] = f"{s['path']} (part {k + 1}/{n})"
+            ns["start"] = s["start"] + round(span * k / n)       # approximate pages
+            ns["end"] = s["end"] if k == n - 1 else s["start"] + round(span * (k + 1) / n)
+            out.append(ns)
+    return out
 
-        starts = sorted(grouped)
-        stack = []
-        for i, start_page in enumerate(starts):
-            end_page = (starts[i + 1] - 1 if i + 1 < len(starts)
-                        else len(pages))
 
-            for level, title in grouped[start_page]:
-                stack = stack[:level - 1] + [title]
-
-            content = "\n".join(
-                page_text for page_no, page_text in pages
-                if start_page <= page_no <= end_page
-            ).strip()
-            if len(content.split()) < 30:
-                continue
-
-            title = grouped[start_page][-1][1]
-            sections.append({
-                "title": title,
-                "path": " > ".join(stack),
-                "chapter": stack[0] if stack else title,
-                "start": start_page,
-                "end": end_page,
-                "text": content,
-            })
-
-    else:
-        # Fallback for PDFs without bookmarks and for Markdown/TXT inputs.
-        stack = []
-        current = None
-        intro_lines = []
-        intro_start = None
-        intro_end = None
-        in_fence = False
-        fence_marker = None
-
-        for page_no, page_text in pages:
-            for line in page_text.splitlines():
-                stripped = line.strip()
-
-                # Track fenced code blocks (``` or ~~~); headings inside them
-                # are Python comments/code, not document structure.
-                fence_match = re.match(r"^(```+|~~~+)", stripped)
-                if fence_match:
-                    marker = fence_match.group(1)[0]
-                    if not in_fence:
-                        in_fence = True
-                        fence_marker = marker
-                    elif marker == fence_marker:
-                        in_fence = False
-                        fence_marker = None
-                    if current is not None:
-                        current["lines"].append(line)
-                        current["end"] = page_no
-                    elif not sections:
-                        if intro_start is None:
-                            intro_start = page_no
-                        intro_end = page_no
-                        intro_lines.append(line)
-                    continue
-
-                match = HEAD_RE.match(line) if not in_fence else None
-                title = None
-                if match:
-                    title = re.sub(r"[*_`]", "", match.group(2)).strip()
-                    # Reject figure captions and obvious code/comment fragments.
-                    if (
-                        re.match(r"^(?:<mark>)?t?Fig\.?\s*\d", title, re.IGNORECASE)
-                        or re.search(r"[=();{}\[\]]", title)
-                        or title.startswith(("#", "import ", "from ", "print("))
-                    ):
-                        match = None
-
-                if match:
-                    level = len(match.group(1))
-                    stack = stack[:level - 1] + [title]
-                    current = {
-                        "title": title,
-                        "path": " > ".join(stack),
-                        "chapter": stack[0],
-                        "start": page_no,
-                        "end": page_no,
-                        "lines": [],
-                    }
-                    sections.append(current)
-                elif current is not None:
-                    current["lines"].append(line)
-                    current["end"] = page_no
-                else:
-                    if intro_start is None:
-                        intro_start = page_no
-                    intro_end = page_no
-                    intro_lines.append(line)
-
-        for section in sections:
-            section["text"] = "\n".join(section.pop("lines")).strip()
-
-        intro_text = "\n".join(intro_lines).strip()
-        if len(intro_text.split()) >= 30:
-            sections.insert(0, {
-                "title": "Introduction",
-                "path": "Introduction",
-                "chapter": "Introduction",
-                "start": intro_start,
-                "end": intro_end,
-                "text": intro_text,
-            })
-
-    # Merge small sections into the previous section within the same chapter.
+def finalize_sections(sections):
+    # Merge very small sections into the previous one (same chapter only).
     merged = []
-    for section in sections:
-        if (merged
-                and len(section["text"].split()) < MIN_SECTION_WORDS
-                and merged[-1]["chapter"] == section["chapter"]):
-            merged[-1]["text"] += (
-                f"\n\n{section['title']}\n{section['text']}"
-            )
-            merged[-1]["end"] = section["end"]
+    for s in sections:
+        if (merged and len(s["text"].split()) < MIN_SECTION_WORDS
+                and merged[-1]["chapter"] == s["chapter"]):
+            merged[-1]["text"] += f"\n\n{s['title']}\n{s['text']}"
+            merged[-1]["end"] = s["end"]
         else:
-            merged.append(section)
-
-    result = [section for section in merged
-              if len(section["text"].split()) >= 30]
-    for n, section in enumerate(result, 1):
-        section["section_id"] = f"SEC_{n:04d}"
+            merged.append(s)
+    result = split_oversized([s for s in merged if len(s["text"].split()) >= 30])
+    for n, s in enumerate(result, 1):
+        s["section_id"] = f"SEC_{n:04d}"
     return result
 
 
@@ -456,6 +475,56 @@ def install_indexes(tmp_dir: Path, data_dir: Path, produced: set):
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+# ---------- manual corrections ----------
+def section_key(s):
+    return f"{s['source']} | {s['path']} | p{s['start']}"
+
+
+def load_overrides():
+    if not OVERRIDES_PATH.exists():
+        return {}
+    raw = json.loads(OVERRIDES_PATH.read_text(encoding="utf-8"))
+    out = {}
+    for key, skills in raw.items():
+        if key.startswith("_"):                    # "_help" / comment entries
+            continue
+        valid = [x for x in skills if x in SKILLS]
+        if len(valid) != len(skills):
+            print(f"   WARNING: invalid skill ID in override: {key}")
+        out[key] = valid
+    return out
+
+
+def apply_overrides(sections, overrides):
+    """Your manual skill assignments win over Qwen. Returns unmatched keys."""
+    used = set()
+    for s in sections:
+        for key in (section_key(s), s["section_id"]):
+            if key in overrides:
+                s["skills"] = overrides[key]
+                s["overridden"] = True
+                s["review"] = False
+                used.add(key)
+                break
+    return [k for k in overrides if k not in used]
+
+
+def make_overrides_template():
+    """Write data/skill_overrides.template.json from the last report: one entry
+    per flagged section, pre-filled with the current skills. Edit the skills,
+    delete entries you agree with, and save as skill_overrides.json."""
+    report = json.loads((DATA_DIR / "classification_report.json").read_text(encoding="utf-8"))
+    template = {"_help": "Edit skill lists (e.g. [\"S5\"]). Delete entries that are fine. "
+                         "Save as skill_overrides.json, then re-run ingestion."}
+    for r in report:
+        if r.get("review") and not r.get("overridden"):
+            key = f"{r['source']} | {r['path']} | p{r['start_page']}"
+            template[key] = r["final_skills"]
+    out = DATA_DIR / "skill_overrides.template.json"
+    out.write_text(json.dumps(template, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"Wrote {len(template) - 1} flagged sections to {out}")
+
+
 def main(textbooks: list[str]):
     import faiss
     from sentence_transformers import SentenceTransformer
@@ -487,12 +556,17 @@ def main(textbooks: list[str]):
                 "Check whether the PDF is scanned or requires OCR."
             )
 
-        toc = extract_pdf_toc(path) if path.suffix.lower() == ".pdf" else []
-        print(f"   PDF bookmarks found: {len(toc)}")
-        sections = build_sections(pages, toc)
+        toc = get_toc(path)
+        sections, method = [], "detected headings"
+        if len(toc) >= MIN_TOC_ENTRIES:
+            sections = build_sections_from_toc(pages, toc)
+            method = f"PDF bookmarks ({len(toc)} entries)"
+        if not sections:
+            sections, method = build_sections(pages), "detected headings"
         if not sections:
             print("   No usable headings found - using page-window sections.")
-            sections = fallback_sections(pages)
+            sections, method = fallback_sections(pages), "page windows"
+        print(f"   Section method: {method}")
 
         for section in sections:
             section["source"] = path.name
@@ -526,6 +600,17 @@ def main(textbooks: list[str]):
             "problem (is Ollama still running?) and re-run to resume."
         )
 
+    overrides = load_overrides()
+    if overrides:
+        unmatched = apply_overrides(all_sections, overrides)
+        print(f"   Applied {len(overrides) - len(unmatched)} manual overrides "
+              f"from {OVERRIDES_PATH.name}")
+        if unmatched:
+            print(f"   WARNING: {len(unmatched)} override keys matched no section "
+                  "(section titles/pages changed?):")
+            for k in unmatched[:5]:
+                print("     ", k)
+
     report = [{
         "section_id": s["section_id"],
         "source": s.get("source", "unknown"),
@@ -540,6 +625,7 @@ def main(textbooks: list[str]):
         "reason": s.get("reason", ""),
         "final_skills": s.get("skills", []),
         "review": s.get("review", False),
+        "overridden": s.get("overridden", False),
     } for s in all_sections]
     report_path = DATA_DIR / "classification_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -585,5 +671,9 @@ def main(textbooks: list[str]):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        sys.exit("Usage: python src/ingest_textbook.py <textbook1.pdf> [textbook2.pdf ...]")
-    main(sys.argv[1:])
+        sys.exit("Usage: python src/ingest_textbook.py <textbook1.pdf> [textbook2.pdf ...]\n"
+                 "       python src/ingest_textbook.py --overrides-template")
+    if sys.argv[1] == "--overrides-template":
+        make_overrides_template()
+    else:
+        main(sys.argv[1:])
