@@ -15,3 +15,7 @@ env/
 # IDE
 .vscode/
 .idea/
+
+# Generated at runtime
+data/ingestion_status.json
+data/ingestion_status.json.tmp
