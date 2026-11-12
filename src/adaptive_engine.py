@@ -10,6 +10,13 @@ import csv
 from typing import Iterable
 
 
+class NoQuestionAvailable(ValueError):
+    """Raised when no suitable unseen question can be found.
+
+    It subclasses ValueError, so older code that catches ValueError still works.
+    """
+
+
 class AdaptiveQuestionSelector:
     def __init__(self, questions_path: str, q_matrix_path: str):
         self.questions = self._load_questions(questions_path)
@@ -112,33 +119,58 @@ class AdaptiveQuestionSelector:
         mastery: dict[str, float],
         asked_question_ids: set[str] | None = None,
         allow_repeat: bool = False,
+        remaining_quota: dict[str, int] | None = None,
     ) -> dict:
         """Select the next adaptive question.
 
         By default, previously answered questions are excluded. If the current
         question bank has no unseen question for the weakest skill, a clear
         error is raised rather than silently repeating a question.
+
+        remaining_quota (optional): {"S1": 2, "S2": 0, ...}. When given, only
+        skills with quota left are considered, the weakest of those is the
+        target, and a skill with no unseen question left is skipped in favour
+        of the next weakest one. When omitted, behaviour is unchanged.
         """
         missing = [s for s in mastery if not isinstance(mastery[s], (int, float))]
         if missing:
             raise ValueError(f"Invalid mastery values for: {missing}")
 
-        target_skill = self.find_weakest_skill(mastery)
         asked_question_ids = asked_question_ids or set()
 
-        candidates = [
-            q for q in self.questions
-            if target_skill in q["skills_list"]
-            and (allow_repeat or q["question_id"] not in asked_question_ids)
-        ]
+        if remaining_quota is None:
+            # Old behaviour: only the single weakest skill is tried.
+            target_skills = [self.find_weakest_skill(mastery)]
+        else:
+            # Weakest first, skipping skills whose quota is used up.
+            with_quota = [s for s in mastery if remaining_quota.get(s, 0) > 0]
+            if not with_quota:
+                raise NoQuestionAvailable("All skill quotas are used up.")
+            target_skills = sorted(with_quota, key=mastery.get)
+
+        target_skill, candidates = None, []
+        for skill in target_skills:
+            candidates = [
+                q for q in self.questions
+                if skill in q["skills_list"]
+                and (allow_repeat or q["question_id"] not in asked_question_ids)
+            ]
+            if candidates:
+                target_skill = skill
+                break
 
         if not candidates:
-            if allow_repeat:
-                raise ValueError(
-                    f"No questions in the bank are mapped to target skill {target_skill}."
+            if remaining_quota is not None:
+                raise NoQuestionAvailable(
+                    "No unseen questions remain for any skill with quota left."
                 )
-            raise ValueError(
-                f"No unseen questions remain for target skill {target_skill}. "
+            weakest = target_skills[0]
+            if allow_repeat:
+                raise NoQuestionAvailable(
+                    f"No questions in the bank are mapped to target skill {weakest}."
+                )
+            raise NoQuestionAvailable(
+                f"No unseen questions remain for target skill {weakest}. "
                 "Add/reserve adaptive questions or explicitly allow repeats."
             )
 
@@ -161,6 +193,7 @@ class AdaptiveQuestionSelector:
             "correct_answer": selected["correct_answer"],
             "difficulty": selected["difficulty"],
             "skills": selected["skills_list"],
+            "explanation": selected.get("explanation", ""),
             "target_skill": target_skill,
             "score": score,
         }
