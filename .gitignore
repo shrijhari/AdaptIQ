@@ -15,3 +15,9 @@ env/
 # IDE
 .vscode/
 .idea/
+# Student records
+data/students/*.json
+
+# Uploaded textbooks
+knowledge_base/*.pdf
+data/adaptive_questions.csv.bak
