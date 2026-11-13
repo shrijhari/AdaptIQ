@@ -44,12 +44,15 @@ class AdaptiveSession:
         """Return the next question, or None once the session is finished."""
         if self.is_finished():
             return None
+        # Only pass remaining_quota when a quota is in use, so a custom selector
+        # written for the older three-argument call keeps working.
+        extra = {} if self.quota is None else {"remaining_quota": self.quota}
         try:
             self.current_question = self.selector.select_next_question(
                 self.bkt.mastery,
                 asked_question_ids=self.asked_question_ids,
                 allow_repeat=self.allow_repeat,
-                remaining_quota=self.quota,
+                **extra,
             )
         except NoQuestionAvailable:
             if self.quota is None:

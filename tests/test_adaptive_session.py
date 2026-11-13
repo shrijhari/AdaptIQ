@@ -117,3 +117,22 @@ def test_submit_before_next_question_raises():
     session = make_session(quota={s: 1 for s in SKILLS})
     with pytest.raises(RuntimeError):
         session.submit_answer("A")
+
+
+def test_old_style_selector_without_quota_argument_still_works():
+    """A selector written for the 3-argument call must work when no quota is used."""
+    real = make_selector()
+
+    class OldStyle:
+        questions = real.questions
+
+        def select_next_question(self, mastery, asked_question_ids=None,
+                                 allow_repeat=False):
+            return real.select_next_question(
+                mastery, asked_question_ids=asked_question_ids,
+                allow_repeat=allow_repeat)
+
+    session = AdaptiveSession(BKT({s: 0.5 for s in SKILLS}), OldStyle())
+    q = session.next_question()
+    assert q is not None
+    assert session.submit_answer("A")["question_id"] == q["question_id"]

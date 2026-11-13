@@ -20,6 +20,9 @@ Status file (data/ingestion_status.json):
       "done":    30,               # sections classified so far (stage 2)
       "total":   309,              # sections to classify (stage 2)
       "percent": 38,               # 0..100, handy for a progress bar
+      "progress": 0.38,            # same thing as a 0..1 fraction
+      "files":   ["ISLP.pdf"],     # same list as "books"
+      "updated_at": "...",
       "message": "last line printed by the script",
       "books":   ["ISLP.pdf", ...],
       "error":   null | "why it failed",
@@ -65,14 +68,17 @@ def _now() -> str:
 
 def _idle_status() -> dict:
     return {"state": "idle", "stage": "", "stage_number": 0, "done": 0,
-            "total": 0, "percent": 0, "message": "", "books": [],
-            "error": None, "pid": None, "started_at": None,
-            "finished_at": None}
+            "total": 0, "percent": 0, "progress": 0.0, "message": "",
+            "books": [], "files": [], "error": None, "pid": None,
+            "started_at": None, "finished_at": None, "updated_at": None}
 
 
 def _write_status(status: dict, path: Path) -> None:
     """Write atomically so a reader never sees a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    status["progress"] = round(status.get("percent", 0) / 100, 2)
+    status["files"] = list(status.get("books", []))
+    status["updated_at"] = _now()
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(status, indent=2), encoding="utf-8")
     os.replace(tmp, path)

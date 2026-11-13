@@ -114,3 +114,16 @@ def test_bad_input_is_rejected(tmp_path):
         start_ingestion([tmp_path / "notes.txt"], status_path=tmp_path / "s.json")
     with pytest.raises(FileNotFoundError):
         start_ingestion([tmp_path / "missing.pdf"], status_path=tmp_path / "s.json")
+
+
+def test_status_has_fields_the_upload_page_reads(tmp_path, pdf):
+    script = fake_script(tmp_path, """
+        print("2/6 Classifying sections...")
+        print("   30/60 sections classified")
+    """)
+    status_path = tmp_path / "status.json"
+    start_ingestion([pdf], script=script, status_path=status_path).join(timeout=20)
+    status = get_status(status_path)
+    assert status["progress"] == 1.0                 # finished: 0..1 fraction
+    assert status["files"] == ["book.pdf"]
+    assert status["updated_at"]
