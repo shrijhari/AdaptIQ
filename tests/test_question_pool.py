@@ -123,6 +123,10 @@ def test_good_question_passes():
     ({"question": "According to the passage, why does overfitting hurt?"}, "passage"),
     ({"option_d": "All of the above"}, "all/none"),
     ({"question": "Why does the model memorised noise in the training set happen?"}, "given away"),
+    ({"question": "What does the x-axis in Figure 11.7 represent for overfitting?"}, "figure"),
+    ({"question": "Which idea is introduced in Section 3.2 about overfitting?"}, "figure"),
+    ({"question": "As shown in the figure, why does overfitting hurt new data?"}, "figure"),
+    ({"explanation": "As shown in Table 4, memorised noise does not generalise."}, "figure"),
 ])
 def test_bad_questions_are_rejected_with_reason(changes, expected):
     ok, reason = qp.check_question(good_question(**changes))
@@ -261,3 +265,23 @@ def test_zero_questions_requested(env):
 def test_bank_pool_mixes_difficulty(env):
     pool = qp.bank_pool("S2", 2)
     assert {q["difficulty"] for q in pool} == {"Easy", "Hard"}
+
+
+def test_hash_table_is_not_mistaken_for_a_table_reference():
+    q = good_question(question="Why can a hash table help with overfitting checks?")
+    assert qp.check_question(q)[0]
+
+
+def test_old_cache_is_cleaned_with_the_current_rules(env, monkeypatch):
+    bad = good_question(question_id="G_S2_0001",
+                        question="What does the x-axis in Figure 11.7 show about overfitting?")
+    keep = good_question(question_id="G_S2_0002", source_chunk_id="S2_C1")
+    qp._save_cache("S2", [bad, keep])
+
+    monkeypatch.setattr(qp, "_call_llm", FakeLLM())
+    pool = qp.generate_pool("S2", 1)
+    assert [q["question_id"] for q in pool] == ["G_S2_0002"]
+
+    import json
+    saved = json.loads((env / "generated_pool" / "S2.json").read_text())
+    assert [q["question_id"] for q in saved["questions"]] == ["G_S2_0002"]

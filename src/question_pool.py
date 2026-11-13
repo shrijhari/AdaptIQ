@@ -89,6 +89,16 @@ _PASSAGE_WORDS = ("the passage", "the text", "the excerpt", "the source",
                   "the given context", "the supplied")
 
 
+# Pointers to numbered parts of the book ("Figure 11.7", "Section 3.2") or to
+# a picture the student cannot see ("as shown in the figure").
+_BOOK_REFERENCE = re.compile(
+    r"\b(?:figure|fig\.|table|equation|eq\.|algorithm|listing|section|chapter"
+    r"|exercise|example)s?\s*\(?\d", re.I)
+_UNSEEN_VISUAL = re.compile(
+    r"\b(?:in|from|of|see|shown in|illustrated in|above|below|depicted in) "
+    r"the (?:figure|diagram|table|plot|graph|image|picture|chart)\b", re.I)
+
+
 def _words(text: str) -> set:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) >= 4}
 
@@ -121,6 +131,10 @@ def check_question(q: dict, chunk_text: str = None, accepted_stems=()):
     low_stem = stem.lower()
     if any(p in low_stem for p in _PASSAGE_WORDS):
         return False, "question refers to 'the passage' the student cannot see"
+    explanation = q["explanation"].strip()
+    for text in (stem, explanation):
+        if _BOOK_REFERENCE.search(text) or _UNSEEN_VISUAL.search(text):
+            return False, "refers to a figure, table or section the student cannot see"
     if any(o.lower().rstrip(".") in _BAD_OPTIONS for o in options):
         return False, "uses an 'all/none of the above' style option"
     for i in range(4):
@@ -219,6 +233,9 @@ _SYSTEM_PROMPT = (
     "- Exactly four different, plausible options; exactly one is correct.\n"
     "- Options are plain answer text. Do not start them with A), B), 1. etc. "
     "Do not use 'all of the above' or 'none of the above'.\n"
+    "- Never mention figures, tables, equations, sections, chapters or "
+    "exercise numbers, and never write 'the passage' - not even in the "
+    "explanation. The student cannot see them.\n"
     "- Do not put the answer inside the question.\n"
     "- The explanation is one or two sentences saying why the correct option "
     "is right.\n"
@@ -444,12 +461,22 @@ def generate_pool(skill_id: str, n: int) -> list:
     if chunks is None:                      # no textbook content for this skill
         return bank_pool(skill_id, n)
 
-    questions = _load_cache(skill_id)
+    cached = _load_cache(skill_id)
+    # Re-check old questions with today's rules, so a stricter inspector also
+    # cleans a cache that was written earlier.
+    questions = []
+    for q in cached:
+        if check_question(q, accepted_stems=[a["question"] for a in questions])[0]:
+            questions.append(q)
+    cleaned = len(questions) != len(cached)
+
     if len(questions) < n:
         before = len(questions)
         questions = _generate_more(skill_id, chunks, questions, n - len(questions))
         if len(questions) > before:
-            _save_cache(skill_id, questions)
+            cleaned = True
+    if cleaned:
+        _save_cache(skill_id, questions)
 
     pool = _mix(questions, n)
     if len(pool) < n:                       # top up from the hand-written bank
