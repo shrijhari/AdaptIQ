@@ -15,7 +15,16 @@ env/
 # IDE
 .vscode/
 .idea/
+<<<<<<< HEAD
 
 # Generated at runtime
 data/ingestion_status.json
 data/ingestion_status.json.tmp
+=======
+# Student records
+data/students/*.json
+
+# Uploaded textbooks
+knowledge_base/*.pdf
+data/adaptive_questions.csv.bak
+>>>>>>> origin/main

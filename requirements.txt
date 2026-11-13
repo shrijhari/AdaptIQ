@@ -1,2 +1,11 @@
 pytest>=8.0
 streamlit>=1.30
+pypdf>=4.0
+python-docx>=1.1
+python-pptx>=0.6
+pymupdf4llm
+ollama
+sentence-transformers
+faiss-cpu
+numpy
+pandas
